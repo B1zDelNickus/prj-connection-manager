@@ -1,0 +1,73 @@
+<configuration
+        xmlns="http://ch.qos.logback/xml/ns/logback"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://ch.qos.logback/xml/ns/logback https://raw.githubusercontent.com/enricopulatzo/logback-XSD/master/src/main/xsd/logback.xsd"
+>
+    <property scope="system" name="service" value="${SERVICE_NAME:-no-service}"/>
+    <property scope="system" name="host" value="${HOSTNAME:-no-host}"/>
+    <property scope="system" name="amqp_appender_on" value="${LOG_AMQP_ON:-false}"/>
+    <property scope="system" name="amqp_appender_vhost" value="${LOG_AMQP_VHOST:-NONE}"/>
+
+    <!-- позволяет перекрыть файл на уровне сервиса внутри докера и добавить в design-time или runtime нужную конфигурацию -->
+    <include file="${LOG_EXTENSION_FILE:-./logback-extension.xml}" optional="true"/>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>${LOG_CONSOLE_LEVEL:-${LOG_SPECTRUM_LEVEL:-DEBUG}}</level>
+        </filter>
+        <encoder>
+            <!-- улучшенный паттерн - возможность установить из ENV, вывод времени с начала работы, полная дата- время, гарантия однострочных сообщений, ограничение длины stacktrace -->
+            <pattern>${LOG_DEFAULT_LAYOUT:-%-16(%d{yyyy-MM-dd'T'HH:mm:ss.SSSZ} %r %-5level %property{host} [%thread] %property{service} %logger{36}) - %replace(%msg){'\s+',' '}%n%ex{10}}</pattern>
+        </encoder>
+    </appender>
+
+
+    <if condition='property("amqp_appender_on")!="false"'>
+        <then>
+            <appender name="amqp"
+                      class="org.springframework.amqp.rabbit.logback.AmqpAppender">
+                <filter class="codes.spectrum.logging.logback.SetupUnifiedMDCFilter" />
+                <encoder class="codes.spectrum.logging.logback.UnifiedJsonEncoder"/>
+                <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                    <level>${LOG_AMQP_LEVEL:-INFO}</level>
+                </filter>
+                <host>${LOG_AMQP_HOST:-127.0.0.1}</host>
+                <port>${LOG_AMQP_PORT:-5672}</port>
+                <if condition='property("amqp_appender_vhost").contains("NONE")'>
+                    <then>
+                    </then>
+                    <else>
+                        <virtualHost>${LOG_AMQP_VHOST}</virtualHost>
+                    </else>
+                </if>
+                <username>${LOG_AMQP_USER:-guest}</username>
+                <password>${LOG_AMQP_PASSWORD:-guest}</password>
+                <exchangeType>topic</exchangeType>
+                <exchangeName>${LOG_AMQP_EXCHANGE:-log}</exchangeName>
+                <applicationId>${SERVICE_NAME:-no-service}</applicationId>
+                <routingKeyPattern>${LOG_AMQP_ROUTE_PATTERN:-${LOG_AMQP_PREFIX:-log}.%level.%property{service}.%X{operation:-none}.%X{phase:-none}.%X{state:-none}.%X{user:-none}.%X{session:-none}.%X{logger-tail:-none}.%property{host}}</routingKeyPattern>
+                <contentType>text/plain</contentType>
+                <maxSenderRetries>${LOG_AMQP_RETRY:-3}</maxSenderRetries>
+                <charset>UTF-8</charset>
+            </appender>
+        </then>
+    </if>
+
+    <root level="${LOG_ROOT_LEVEL:-WARN}">
+        <appender-ref ref="STDOUT"/>
+        <if condition='property("amqp_appender_on").contains("all")'>
+            <then>
+                <appender-ref ref="amqp"/>
+            </then>
+        </if>
+    </root>
+
+    <logger name="codes.spectrum" level="${LOG_SPECTRUM_LEVEL:-DEBUG}">
+        <if condition='property("amqp_appender_on")!="false"'>
+            <then>
+                <appender-ref ref="amqp"/>
+            </then>
+        </if>
+    </logger>
+
+</configuration>

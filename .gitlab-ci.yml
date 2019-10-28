@@ -1,0 +1,73 @@
+
+# Специальный образ, объединяющий alpine, docker, openjdk-8/11, gradle
+image: "$BUILD_IMAGE"
+
+# Требуется для использования докера внутри сборки
+services:
+  - docker:dind
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+stages:
+  - test
+  - deploy
+
+
+
+# Домашняя директория Gradle должна быть направлена именно на текущую .gradle проекта, до запуска
+before_script:
+  - echo "${CI_REGISTRY_PASSWORD}" | docker login -u "${CI_REGISTRY_USER}" --password-stdin ${CI_REGISTRY}
+  - export GRADLE_USER_HOME=`pwd`/.gradle
+
+# Основная сборочная фаза, с компиляцией и тестированием
+test:
+  stage: test
+  script: gradle build --refresh-dependencies
+  cache:
+    # Кэш привязываем к бранчу
+    key: "$CI_COMMIT_REF_NAME"
+    paths:
+      # Внимание! В build.gradle.kts многомодульных проектов все проекты должны собираться в подпапки общего build (!)
+      - build
+      - .gradle
+
+
+
+# Фаза публикации докеров в репозитории, работает только для бранча dev
+# в явном виде заблокирована пере-сборка кода, кэш не всегда отрабаотывает
+deploy-snapshot:
+  stage: deploy
+  only:
+    - dev
+    - master
+  cache:
+    # Кэш привязываем к бранчу
+    key: "$CI_COMMIT_REF_NAME"
+    policy: pull
+    paths:
+      # Внимание! В build.gradle.kts многомодульных проектов все проекты должны собираться в подпапки общего build (!)
+      - build
+      - .gradle
+  script:
+    # опция --build-cache обязательна для оптимизации этой сборки
+    - gradle deploy --build-cache -Prelease -Ptag=dev --refresh-dependencies
+
+# Фаза публикации докеров в репозитории, работает только для бранча master
+# в явном виде заблокирована пере-сборка кода, кэш не всегда отрабаотывает
+deploy-release:
+  stage: deploy
+  only:
+    - master
+  cache:
+    # Кэш привязываем к бранчу
+    key: "$CI_COMMIT_REF_NAME"
+    policy: pull
+    paths:
+      # Внимание! В build.gradle.kts многомодульных проектов все проекты должны собираться в подпапки общего build (!)
+      - build
+      - .gradle
+  script:
+    # опция --build-cache обязательна для оптимизации этой сборки
+    - gradle deploy --build-cache -Prelease -Ptag=master --refresh-dependencies
+        

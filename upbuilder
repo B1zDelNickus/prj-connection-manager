@@ -1,0 +1,4 @@
+#!/bin/bash
+cp ./buildSrc/upbuilder ./buildSrc/upbuilder-tmp
+./buildSrc/upbuilder-tmp
+rm -rf ./buildSrc/upbuilder-tmp
